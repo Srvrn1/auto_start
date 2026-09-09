@@ -1,25 +1,14 @@
 #include <Arduino.h>
 #include <AutoOTA.h>
-// Пример: Управление светодиодом через VK бота
-// Команды: "10" - выключить 1 реле
-//          "11" - включить 1 реле
-//          "12" - проверить статус
-//               аналогично для всех реле 1, 2, 3, 4. 
-
-
-#include <Arduino.h>
 #include <Ticker.h>
-//#include <GyverDS18.h>
 #include <OneWire.h>
 #include <DallasTemperature.h>
-
 #include <DGO_VKbot.h>
-//GyverDS18Single ds(14);  // пин
+
 #define ONE_WIRE_BUS 14
 
 OneWire oneWire(ONE_WIRE_BUS);
 
-// Pass our oneWire reference to Dallas Temperature.
 DallasTemperature sensors(&oneWire);
 
 // НАСТРОЙКИ
@@ -29,7 +18,7 @@ DallasTemperature sensors(&oneWire);
 #define GROUP_ID "-241019082"
 #define YOUR_USER_ID 353090963 
 
-#define LED_PIN D0                          // Передача КПП
+#define KPP_PIN D0                          // Передача КПП
 #define PIN1 D1                             // Пин зажигание
 #define PIN2 D2                             // Стартер
 #define PIN3 D3                             // печка
@@ -40,11 +29,12 @@ bool ledState = 0;                           // Состояние светод�
 
 Ticker timerCounter;                         // Таймер для прерываний
 int8_t count = 0;
+int16_t countOTA = 30;                      //счетчик для проверки обновлений
 
 DGO_VKbot bot;                              // Создаем экземпляр бота
 bool flag = false;                          //запрос на температуру
 
-AutoOTA ota("1.0", "Srvrn1/auto_start");
+AutoOTA ota("0.2", "Srvrn1/auto_start");    //текущая версия
 
 void WiFi_connect(){
   int8_t i=20;
@@ -63,6 +53,7 @@ void WiFi_connect(){
 }
 
 void timer1() {
+  countOTA--;
   count++;
   if (count >= 60) {
     count = 0;
@@ -178,24 +169,21 @@ void setup() {
   Serial.begin(74880);
   
   // Настройка пина LED
-  pinMode(LED_PIN, OUTPUT);
-  digitalWrite(LED_PIN, LOW);
+  pinMode(KPP_PIN, INPUT_PULLUP);            //
 
   pinMode(PIN1, OUTPUT);
   pinMode(PIN2, OUTPUT);
   pinMode(PIN3, OUTPUT);
   pinMode(PIN4, OUTPUT);
 
-  digitalWrite(PIN1, HIGH);          
-  digitalWrite(PIN2, HIGH);
-  digitalWrite(PIN3, HIGH);
-  digitalWrite(PIN4, HIGH);
+  digitalWrite(PIN1, LOW);          
+  digitalWrite(PIN2, LOW);
+  digitalWrite(PIN3, LOW);
+  digitalWrite(PIN4, LOW);
   
   WiFi_connect();
 
-  if (ota.checkUpdate()) {       //проверяем обновления
-        ota.update();
-    }
+
   // Настраиваем бота
   bot.setToken(VK_TOKEN);
   bot.setGroupId(GROUP_ID);
@@ -215,7 +203,7 @@ void setup() {
     // Синхронизируем время
     bot.setTimezone(3); // UTC+3
     bot.syncTime();
-    
+    Serial.println("версия 0.2");
     // Отправляем уведомление о готовности
     delay(1000);
      bot.sendMessage("Бот готов к управлению ", YOUR_USER_ID);
@@ -230,8 +218,14 @@ void setup() {
 void loop() {
   bot.tick();
   ota.tick();
+  if(!countOTA){                      //проверяем обновления
+    countOTA = 300;                 //таймер на 5 мин
+    if (ota.checkUpdate()) {       
+      ota.update();
+    }
+  }
 
-  if (flag) {                       //отправка температуры
+  if (flag) {                               //отправка температуры
     delay(500);
     Serial.print("temp: ");
     Serial.println(sensors.getTempCByIndex(0));
