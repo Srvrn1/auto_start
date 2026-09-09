@@ -202,7 +202,7 @@ void setup() {
     // Синхронизируем время
     bot.setTimezone(3); // UTC+3
     bot.syncTime();
-    Serial.println("версия 0.2");
+    Serial.println("версия 0.3");
     // Отправляем уведомление о готовности
     delay(1000);
      bot.sendMessage("Бот готов к управлению ", YOUR_USER_ID);
@@ -217,12 +217,14 @@ void setup() {
 void loop() {
   bot.tick();
   ota.tick();
-  if(!countOTA){                      //проверяем обновления
-    countOTA = 300;                 //таймер на 5 мин
+  if(!countOTA){
+    Serial.println("Проверка обновлений...");                      //проверяем обновления
+    countOTA = 30;                 //таймер на 5 мин
     if (ota.checkUpdate()) {   
       Serial.println("Обновление пришло!");    
       ota.update();
     }
+    else Serial.println("Обновлений нет!");
   }
 
   if (flag) {                               //отправка температуры
