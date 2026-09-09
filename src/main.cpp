@@ -1,5 +1,5 @@
 #include <Arduino.h>
-
+#include <AutoOTA.h>
 // Пример: Управление светодиодом через VK бота
 // Команды: "10" - выключить 1 реле
 //          "11" - включить 1 реле
@@ -29,11 +29,11 @@ DallasTemperature sensors(&oneWire);
 #define GROUP_ID "-241019082"
 #define YOUR_USER_ID 353090963 
 
-#define LED_PIN 0                           // Пин светодиода (встроенный LED на большинстве ESP)
-#define PIN1 D1
-#define PIN2 D2
-#define PIN3 D3
-#define PIN4 D4
+#define LED_PIN D0                          // Передача КПП
+#define PIN1 D1                             // Пин зажигание
+#define PIN2 D2                             // Стартер
+#define PIN3 D3                             // печка
+#define PIN4 D4                             // габариты
 
 uint16_t command = 0;                        // Команда
 bool ledState = 0;                           // Состояние светодиода
@@ -43,6 +43,8 @@ int8_t count = 0;
 
 DGO_VKbot bot;                              // Создаем экземпляр бота
 bool flag = false;                          //запрос на температуру
+
+AutoOTA ota("1.0", "Srvrn1/auto_start");
 
 void WiFi_connect(){
   int8_t i=20;
@@ -184,14 +186,16 @@ void setup() {
   pinMode(PIN3, OUTPUT);
   pinMode(PIN4, OUTPUT);
 
-  digitalWrite(PIN1, HIGH);
+  digitalWrite(PIN1, HIGH);          
   digitalWrite(PIN2, HIGH);
   digitalWrite(PIN3, HIGH);
   digitalWrite(PIN4, HIGH);
   
   WiFi_connect();
 
-  
+  if (ota.checkUpdate()) {       //проверяем обновления
+        ota.update();
+    }
   // Настраиваем бота
   bot.setToken(VK_TOKEN);
   bot.setGroupId(GROUP_ID);
@@ -224,8 +228,9 @@ void setup() {
 }
 
 void loop() {
-  if(WiFi.status() != WL_CONNECTED) WiFi_connect();
   bot.tick();
+  ota.tick();
+
   if (flag) {                       //отправка температуры
     delay(500);
     Serial.print("temp: ");
@@ -233,4 +238,6 @@ void loop() {
     bot.sendMessage(String(sensors.getTempCByIndex(0)), YOUR_USER_ID);
     flag = false;
   }
+
+  if(WiFi.status() != WL_CONNECTED) WiFi_connect();
 }
