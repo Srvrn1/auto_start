@@ -29,12 +29,12 @@ bool ledState = 0;                           // Состояние светод�
 
 Ticker timerCounter;                         // Таймер для прерываний
 int8_t count = 0;
-int16_t countOTA = 30;                      //счетчик для проверки обновлений
+int16_t countOTA = 10;                      //счетчик для проверки обновлений
 
 DGO_VKbot bot;                              // Создаем экземпляр бота
 bool flag = false;                          //запрос на температуру
 
-AutoOTA ota("0.2", "Srvrn1/auto_start");    //текущая версия
+AutoOTA ota("0.3", "Srvrn1/auto_start");    //текущая версия
 
 void WiFi_connect(){
   int8_t i=20;
@@ -76,10 +76,9 @@ void onNewMessage(VkUpdate& update) {         // Обработчик новых
     switch (command){                           //обработка команд
 
     case 5:
-      //if (!ds.requestTemp()) {
-     // Serial.println("request error");
-     // bot.sendMessage("Ошибка датчика", peer_id);
-     // }
+      
+      Serial.println("версия: 0.2");
+     
       sensors.requestTemperatures(); // Send the command to get temperatures
       bot.sendMessage("получение данных", peer_id);
       flag = 1;                                 //запрос на температуру
@@ -220,7 +219,8 @@ void loop() {
   ota.tick();
   if(!countOTA){                      //проверяем обновления
     countOTA = 300;                 //таймер на 5 мин
-    if (ota.checkUpdate()) {       
+    if (ota.checkUpdate()) {   
+      Serial.println("Обновление пришло!");    
       ota.update();
     }
   }
