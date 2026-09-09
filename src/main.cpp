@@ -29,12 +29,11 @@ bool ledState = 0;                           // Состояние светод�
 
 Ticker timerCounter;                         // Таймер для прерываний
 int8_t count = 0;
-int16_t countOTA = 10;                      //счетчик для проверки обновлений
 
 DGO_VKbot bot;                              // Создаем экземпляр бота
 bool flag = false;                          //запрос на температуру
 
-AutoOTA ota("0.3", "Srvrn1/auto_start");    //текущая версия
+AutoOTA ota("1.1", "Srvrn1/auto_start");    //текущая версия
 
 void WiFi_connect(){
   int8_t i=20;
@@ -53,7 +52,6 @@ void WiFi_connect(){
 }
 
 void timer1() {
-  countOTA--;
   count++;
   if (count >= 60) {
     count = 0;
@@ -76,8 +74,12 @@ void onNewMessage(VkUpdate& update) {         // Обработчик новых
     switch (command){                           //обработка команд
 
     case 5:
-      
-      Serial.println("версия: 0.2");
+      Serial.println(ota.version());
+      if (ota.checkUpdate()) {
+        Serial.println("Обновление доступно!");
+        ota.updateNow();
+      }
+      else Serial.println("Обновления нет!");
      
       sensors.requestTemperatures(); // Send the command to get temperatures
       bot.sendMessage("получение данных", peer_id);
@@ -202,7 +204,9 @@ void setup() {
     // Синхронизируем время
     bot.setTimezone(3); // UTC+3
     bot.syncTime();
-    Serial.println("версия 0.3");
+
+    Serial.print("Версия бота: ");
+    Serial.println(ota.version());
     // Отправляем уведомление о готовности
     delay(1000);
      bot.sendMessage("Бот готов к управлению ", YOUR_USER_ID);
@@ -217,15 +221,7 @@ void setup() {
 void loop() {
   bot.tick();
   ota.tick();
-  if(!countOTA){
-    Serial.println("Проверка обновлений...");                      //проверяем обновления
-    countOTA = 30;                 //таймер на 5 мин
-    if (ota.checkUpdate()) {   
-      Serial.println("Обновление пришло!");    
-      ota.update();
-    }
-    else Serial.println("Обновлений нет!");
-  }
+
 
   if (flag) {                               //отправка температуры
     delay(500);
