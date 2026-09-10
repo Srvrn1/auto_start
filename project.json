@@ -8,7 +8,7 @@
       "chipFamily": "ESP8266",
       "parts": [
         {
-          "path": "https://github.com/Srvrn1/auto_start/blob/main/bin/firmware.bin",
+          "path": "https://raw.githubusercontent.com/Srvrn1/auto_start/main/bin/firmware.bin",
           "offset": 0
         }
       ]
