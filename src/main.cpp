@@ -33,7 +33,7 @@ int8_t count = 0;
 DGO_VKbot bot;                              // Создаем экземпляр бота
 bool flag = false;                          //запрос на температуру
 
-AutoOTA ota("1.1", "Srvrn1/auto_start");    //текущая версия
+AutoOTA ota("1.2", "Srvrn1/auto_start");    //текущая версия
 
 void WiFi_connect(){
   int8_t i=20;
@@ -76,6 +76,7 @@ void onNewMessage(VkUpdate& update) {         // Обработчик новых
     case 5:
       Serial.println(ota.version());
       if (ota.checkUpdate()) {
+        noInterrupts();
         Serial.println("Обновление доступно!");
         ota.updateNow();
       }
