@@ -1,8 +1,8 @@
 {
   "name": "Auto Start",
   "about": "Эксперементальная обкатка ",
-  "version": "1.6",
-  "notes": "Работает обновление",
+  "version": "1.7",
+  "notes": "реализованы улучшения",
   "builds": [
     {
       "chipFamily": "ESP8266",

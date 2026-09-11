@@ -25,7 +25,7 @@ DallasTemperature sensors(&oneWire);
 #define PIN4 D4                             // габариты
 
 uint16_t command = 0;                        // Команда
-bool ledState = 0;                           // Состояние светодиода
+bool ledState = 0;                           // Состояние светодиодов
 
 Ticker timerCounter;                         // Таймер для прерываний
 int8_t count = 0;
@@ -33,7 +33,7 @@ int8_t count = 0;
 DGO_VKbot bot;                              // Создаем экземпляр бота
 bool flag = false;                          //запрос на температуру
 
-AutoOTA ota("1.6", "Srvrn1/auto_start");    //текущая версия==============================
+AutoOTA ota("1.7", "Srvrn1/auto_start");    //текущая версия==============================
 
 void WiFi_connect(){
   int8_t i=20;
@@ -75,11 +75,12 @@ void onNewMessage(VkUpdate& update) {         // Обработчик новых
 
     case 2155:
       Serial.println("Перезагрузка...");
+      bot.sendMessage("reset", peer_id);
       ESP.restart();
       break;
     
     case 5:
-      sensors.requestTemperatures(); // Send the command to get temperatures
+      sensors.requestTemperatures();             // Send the command to get temperatures
       bot.sendMessage("получение данных", peer_id);
       flag = 1;                                 //запрос на температуру
       delay(500);
@@ -183,7 +184,7 @@ void setup() {
   WiFi_connect();
 
   Serial.println("текущая версия:  " + ota.version());
-  Serial.println("Проверка обновлений...");        //проверка обновлений
+  Serial.println("Проверка обновлений...");                  //проверка обновлений
   String ver, notes;
   if (ota.checkUpdate(&ver, &notes)) {
     Serial.println("Обновление доступно!");
@@ -218,8 +219,8 @@ void setup() {
     bot.syncTime();
 
     // Отправляем уведомление о готовности
-    delay(1000);
-     bot.sendMessage("Бот готов к управлению ", YOUR_USER_ID);
+    delay(500);
+    bot.sendMessage("Бот готов к управлению: "+ ota.version(), YOUR_USER_ID);
   } else {
     Serial.println("Ошибка запуска бота!");
   }
@@ -232,7 +233,6 @@ void loop() {
   bot.tick();
 
   if (flag) {                               //отправка температуры
-    delay(500);
     Serial.print("temp: ");
     Serial.println(sensors.getTempCByIndex(0));
     bot.sendMessage(String(sensors.getTempCByIndex(0)), YOUR_USER_ID);
