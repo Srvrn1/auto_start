@@ -18,22 +18,24 @@ DallasTemperature sensors(&oneWire);
 #define GROUP_ID "-241019082"
 #define YOUR_USER_ID 353090963 
 
-#define KPP_PIN D0                          // Передача КПП
+
 #define PIN1 D1                             // Пин зажигание
 #define PIN2 D2                             // Стартер
 #define PIN3 D3                             // печка
 #define PIN4 D4                             // габариты
+#define zig_sens D5                         //оптопара на зажигание
+#define KPP_sens D0                          // Передача КПП
 
 uint16_t command = 0;                        // Команда
 bool ledState = 0;                           // Состояние светодиодов
-
+int peer_id;
 Ticker timerCounter;                         // Таймер для прерываний
 int8_t count = 0;
 
 DGO_VKbot bot;                              // Создаем экземпляр бота
 bool flag = false;                          //запрос на температуру
 
-AutoOTA ota("1.7", "Srvrn1/auto_start");    //текущая версия==============================
+AutoOTA ota("1.8", "Srvrn1/auto_start");    //текущая версия==============================
 
 void WiFi_connect(){
   int8_t i=20;
@@ -65,7 +67,7 @@ void onNewMessage(VkUpdate& update) {         // Обработчик новых
     text.trim();
     command = text.toInt();
 
-    int peer_id = update.message.peer_id;
+    peer_id = update.message.peer_id;
     
     Serial.print("Получено сообщение: ");
     Serial.println(text);
@@ -82,8 +84,8 @@ void onNewMessage(VkUpdate& update) {         // Обработчик новых
     case 5:
       sensors.requestTemperatures();             // Send the command to get temperatures
       bot.sendMessage("получение данных", peer_id);
-      flag = 1;                                 //запрос на температуру
       delay(500);
+      bot.sendMessage(String(sensors.getTempCByIndex(0)), peer_id);
       break;
 
     case 10:                                    //выключение
@@ -159,6 +161,7 @@ void onNewMessage(VkUpdate& update) {         // Обработчик новых
       break;
 
     default:
+      bot.sendMessage("Неизвестная команда", peer_id);
       break;
     }
   }
@@ -169,7 +172,7 @@ void setup() {
   Serial.begin(74880);
   
   // Настройка пина LED
-  pinMode(KPP_PIN, INPUT_PULLUP);            //
+  pinMode(KPP_sens, INPUT_PULLUP);            //
 
   pinMode(PIN1, OUTPUT);
   pinMode(PIN2, OUTPUT);
@@ -232,10 +235,7 @@ void setup() {
 void loop() {
   bot.tick();
 
-  if (flag) {                               //отправка температуры
-    Serial.print("temp: ");
-    Serial.println(sensors.getTempCByIndex(0));
-    bot.sendMessage(String(sensors.getTempCByIndex(0)), YOUR_USER_ID);
+  if (flag) {                               //
     flag = false;
   }
 
