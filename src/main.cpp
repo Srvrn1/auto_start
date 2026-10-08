@@ -4,6 +4,8 @@
 #include <OneWire.h>
 #include <DallasTemperature.h>
 #include <DGO_VKbot.h>
+#include <PubSubClient.h>
+#include <ESP8266WiFi.h>
 
 #define ONE_WIRE_BUS 12                  //Пин датчика температуры
 
@@ -12,12 +14,26 @@ OneWire oneWire(ONE_WIRE_BUS);
 DallasTemperature sensors(&oneWire);
 
 // НАСТРОЙКИ
-#define WIFI_SSID "Dnlvrn"
+#define WIFI_SSID "srvrn"
 #define WIFI_PASS "2155791975"
+
 #define VK_TOKEN "vk1.a.S9yn4Jfxbps_iLkBwY5qCPZ0yZGiv0MkCCIvgbuzoKeEKiQJ3kNLPxyDbtd1LL6-LHTSCe6NuQy06e0OYBffAcndyVz8Udtnl6OI-z6ZOWn1sThQ8DAuQEnZvHAQ9jNXLFCT1YTZZgf957DCsNOOWYslZ5S8UHiO0XCYhODFsenYpKELuXgo5hvA6SvWgvN7PzKepBqTKFJxUHCmxSjZlw"
 #define GROUP_ID "-241019082"
 #define YOUR_USER_ID 353090963 
+//----------------------------------- Настройки MQTT
+const char* mqttServer   = "m4.wqtt.ru";
+const int   mqttPort     = 9478;
+const int   mqttPortTLS  = 9479;
+String mqttClientId = "srvrn_proba";
+const char* mqttUser = "u_5A3C2X";
+const char* mqttPass = "HilZPRjD";
 
+const int   Qos = 1;
+uint8_t count_connect;
+int8_t pubflag;
+                              //===========топики
+const char* mqtt_topic_counter = "demo/counter";
+//-----------------------------------
 
 #define zik D1                                 // Пин зажигание
 #define starter D2                             // Стартер
@@ -33,10 +49,12 @@ uint16_t command = 0;                        // Команда
 int peer_id;                                 //идентификатор собеседника
 Ticker timerCounter;                         // Таймер для прерываний
 int8_t count = 10;
-
+uint8 count_test =0;
 
 
 DGO_VKbot bot;                              // Создаем экземпляр бота
+WiFiClient espClient;
+PubSubClient client(espClient);
 
 AutoOTA ota("1.9", "Srvrn1/auto_start");    //текущая версия==============================
 
@@ -85,6 +103,63 @@ void onNewMessage(VkUpdate& update) {         // Обработчик новых
   
 }
 
+void callback(char* topic, byte* payload, unsigned int length) {   // Функция обратного вызова при получении сообщения MQTT
+  Serial.print("Сообщение в топике [");
+  Serial.print(topic);
+  Serial.print("]: ");
+  for (unsigned int i = 0; i < length; i++) {
+    Serial.print((char)payload[i]);
+  }
+  Serial.println();
+//----------------------------------------------------
+ /* String command = "";                      // Создаем строку из payload
+    for (uint8 i = 0; i < length; i++) {
+      command += (char)payload[i];
+    }
+    command.trim();                         // Удаляем пробелы из начала и конца строки
+
+    if(strcmp(topic, topic_All_control) == 0) zeroPublish();
+
+    else if (strcmp(topic, mqtt_topic_Relay1) == 0){  // Если топик совпадает с топиком реле
+      relayState2 = command.toInt();
+      controlRelay();
+    }*/
+  
+}
+
+void reconnect() {                           // Функция переподключения к MQTT брокеру
+
+  // Повторяем попытки до успешного подключения
+  while (!client.connected()) {
+    Serial.print("Попытка подключения к MQTT брокеру...");
+    client.setServer(mqttServer, mqttPort);
+    client.setCallback(callback);
+ 
+    client.connect(mqttClientId.c_str(), mqttUser, mqttPass);
+      Serial.println("подключено");
+      // После подключения можно подписаться на топики (если нужно)
+     /* client.subscribe(mqtt_topic_Relay1, Qos);
+      client.subscribe(mqtt_topic_Relay2, Qos);
+      client.subscribe(mqtt_topic_Relay3, Qos);
+      client.subscribe(mqtt_topic_Relay4, Qos);
+
+      client.subscribe(topic_All_control, Qos);
+*/
+     if(client.connected())Serial.println("подключено" );
+    else {
+      Serial.print("ошибка, rc=");
+      Serial.print(client.state());
+      Serial.println(" пробуем снова через 5 секунд");
+      count_connect++;
+      delay(5000);
+    }
+    if(count_connect == 5){
+        count_connect = 0;
+        Serial.println("попытки подключения исчерпаны");
+        break;
+    }
+  }
+}
 
 void VKbot_begin(){
    // Настраиваем бота
@@ -116,11 +191,30 @@ void VKbot_begin(){
 }
 
 void timer1() {
+  count_test++;
+  if(count_test>100)count_test=0;
   count--;
   Serial.println(count);
 
 }
 
+  
+void publish(){
+  //====================================публикуем счетчик
+    char msg[5];                              // Преобразуем значение счетчика в строку
+    snprintf(msg, sizeof(msg), "%d", count_test);
+    
+    // Публикуем в MQTT топик
+    if (client.publish(mqtt_topic_counter, msg)) {
+      Serial.print("Опубликовано: ");
+      Serial.print(msg);
+      Serial.print(" в топик ");
+      Serial.println(mqtt_topic_counter);
+    } else {
+      Serial.println("Ошибка публикации");
+    }
+    pubflag = 1;
+}
 
 void setup() {
   Serial.begin(74880);
@@ -141,6 +235,7 @@ void setup() {
   pinMode(flash, INPUT_PULLUP);
 
   WiFi_connect();
+  reconnect();
   VKbot_begin();
 
   Serial.println("текущая версия:  " + ota.version());
@@ -166,6 +261,7 @@ void loop() {
     count = 120;
     Serial.println("hello");
     bot.sendMessage("hello", YOUR_USER_ID);
+    publish();
   }
 
   bot.tick();
