@@ -13,8 +13,10 @@ OneWire oneWire(ONE_WIRE_BUS);
 
 DallasTemperature sensors(&oneWire);
 
-// НАСТРОЙКИ
-#define WIFI_SSID "srvrn"
+//#define WIFI_SSID "Mega5/4"
+//#define WIFI_PASS "54400544"
+
+#define WIFI_SSID "Dnlvrn"
 #define WIFI_PASS "2155791975"
 
 #define VK_TOKEN "vk1.a.S9yn4Jfxbps_iLkBwY5qCPZ0yZGiv0MkCCIvgbuzoKeEKiQJ3kNLPxyDbtd1LL6-LHTSCe6NuQy06e0OYBffAcndyVz8Udtnl6OI-z6ZOWn1sThQ8DAuQEnZvHAQ9jNXLFCT1YTZZgf957DCsNOOWYslZ5S8UHiO0XCYhODFsenYpKELuXgo5hvA6SvWgvN7PzKepBqTKFJxUHCmxSjZlw"
@@ -33,6 +35,7 @@ uint8_t count_connect;
 int8_t pubflag;
                               //===========топики
 const char* mqtt_topic_counter = "demo/counter";
+const char* topic_alertlamp = "demo/alertlamp";
 //-----------------------------------
 
 #define zik D1                                 // Пин зажигание
@@ -49,24 +52,26 @@ uint16_t command = 0;                        // Команда
 int peer_id;                                 //идентификатор собеседника
 Ticker timerCounter;                         // Таймер для прерываний
 int8_t count = 10;
-uint8 count_test =0;
+uint16_t count_test =0;                      //тестовый для публикаций
 
 
 DGO_VKbot bot;                              // Создаем экземпляр бота
-WiFiClient espClient;
-PubSubClient client(espClient);
+WiFiClient espClient;                       //экземпляр WIFI клиента
+PubSubClient client(espClient);             // экземпляр mqtt клиента
 
-AutoOTA ota("1.9", "Srvrn1/auto_start");    //текущая версия==============================
+AutoOTA ota("2.0", "Srvrn1/auto_start");    //текущая версия==============================
 
 void WiFi_connect(){
   int8_t i=20;
-  Serial.println("Подключение к WiFi...");
+  Serial.print("Подключение к WiFi...");
+  Serial.println(WIFI_SSID);
+
   WiFi.begin(WIFI_SSID, WIFI_PASS);
 
   while (WiFi.status() != WL_CONNECTED && i) {
+      i--;
     delay(500);
     Serial.print(".");
-    i--;
   }
   Serial.println();
   Serial.println("WiFi подключен!");
@@ -74,7 +79,7 @@ void WiFi_connect(){
   Serial.println(WiFi.localIP());
 }
 
-void onNewMessage(VkUpdate& update) {         // Обработчик новых сообщений
+void onNewMessage(VkUpdate& update) {         // Обработчик новых сообщений ВК
   if(update.type == VK_MESSAGE_NEW){
     String text = update.message.text;
     text.toLowerCase();
@@ -192,13 +197,13 @@ void VKbot_begin(){
 
 void timer1() {
   count_test++;
-  if(count_test>100)count_test=0;
+  if(count_test>1000)count_test=0;
   count--;
   Serial.println(count);
+  if(count_test == 30) client.publish(topic_alertlamp , "1");
 
 }
 
-  
 void publish(){
   //====================================публикуем счетчик
     char msg[5];                              // Преобразуем значение счетчика в строку
@@ -257,14 +262,15 @@ void setup() {
 }
 
 void loop() {
+  
  if(count <= 0){
-    count = 120;
+    count = 60;
     Serial.println("hello");
-    bot.sendMessage("hello", YOUR_USER_ID);
+    bot.sendMessage(String(count_test), YOUR_USER_ID);
     publish();
   }
-
+  client.loop();
   bot.tick();
-
+  if (!client.connected()) reconnect();
   if(WiFi.status() != WL_CONNECTED) WiFi_connect();
 }
