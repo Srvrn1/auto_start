@@ -1,19 +1,13 @@
 #include <Arduino.h>
 #include <AutoOTA.h>
 #include <Ticker.h>
-#include <OneWire.h>
-#include <DallasTemperature.h>
+//#include <OneWire.h>
+//#include <DallasTemperature.h>
 #include <DGO_VKbot.h>
 #include <PubSubClient.h>
 #include <ESP8266WiFi.h>
+#include <GyverDS18.h>
 
-
-
-#define ONE_WIRE_BUS 12                  //Пин датчика температуры
-
-OneWire oneWire(ONE_WIRE_BUS);
-
-DallasTemperature sensors(&oneWire);
 
 #define WIFI_SSID "Mega5/4"
 #define WIFI_PASS "54400544"
@@ -36,12 +30,17 @@ const char* mqttUser = "u_5A3C2X";
 const char* mqttPass = "HilZPRjD";
 
 const int   Qos = 1;
-uint8_t count_connect;
-int8_t pubflag;
-                              //===========топики
+
+ //================================================топики
+     //публикация                         
 const char* mqtt_topic_counter = "demo/counter";
 const char* topic_alertlamp = "demo/alertlamp";
+const char* topic_Clock = "demo/time";
+const char* topic_temper_incar = "demo/t_incar";
+    //подписки
 const char* topic_mqtt_OUT = "demo/mqtt_out";
+const char* topic_Clock_set = "demo/time1";
+
 //-------------------------------------------------------------------------------------
 
 #define zik D1                                 // Пин зажигание
@@ -49,25 +48,34 @@ const char* topic_mqtt_OUT = "demo/mqtt_out";
 #define obogrev D8                             // печка
 #define gabarit D4                             // габариты
 
-#define kpp_sens D5                          //контроль КПП
-//#define ds18b20_sens D6                      // DS18b20
+#define kpp_sens D6                           //КПП
+//#define ds18b20_sens D5                     // 
 #define tormoz D7                            // контроль Ручник
 #define flash D3                             //прерывание сигнал с катушки
 //----------------------------------------------------------------------------------------
+uint8_t count_connect;                       // счетчик кол-ва подключений к mqtt
 uint16_t command = 0;                        // Команда
 int peer_id;                                 //идентификатор чата
 Ticker timerCounter;                         // Таймер для прерываний
-int8_t count = 10;
+//int8_t count = 10;
+int8_t flag_minuta = 1;
 uint16_t count_test = 0;                     //тестовый для публикаций
+int8_t flag_getTemp = 0;
 
 int8_t mode_mqtt = 0;                        //если mqtt,то 1, если не соединился то режим ВК, 0
 int16_t vk_timer;                            //время через котор будет попытка подкл mqtt
+
+//--------------------------------------------------clock
+uint8_t hrs=1;
+uint8_t minut=1;
+uint8_t sec=1;
 //-------------------------------------------------------------------------------
 DGO_VKbot bot;                              // Создаем экземпляр бота
 WiFiClient espClient;                       //экземпляр WIFI клиента
 PubSubClient client(espClient);             // экземпляр mqtt клиента
+GyverDS18Single ds(14);                     // пин D5
 
-AutoOTA ota("2.1", "Srvrn1/auto_start");    //текущая версия==============================
+AutoOTA ota("2.2", "Srvrn1/auto_start");    //текущая версия==============================
 
 void WiFi_connect(){
   volatile int8_t n = 2;
@@ -111,7 +119,7 @@ void WiFi_connect(){
   }
 }
 
-void onNewMessage(VkUpdate& update) {         // Обработчик новых сообщений ВК
+void onNewMessage(VkUpdate& update) {                              // Обработчик новых сообщений ВК
   if(update.type == VK_MESSAGE_NEW){
     String text = update.message.text;
     text.toLowerCase();
@@ -175,17 +183,36 @@ void VKbot_begin(){
   }
 }
 
-void callback(char* topic, byte* payload, unsigned int length) {   // Функция обратного вызова при получении сообщения MQTT
+void callback(char* topic, byte* payload, unsigned int length) {   // Функция щбработки сообщения MQTT
   Serial.print("Сообщение в топике [");
   Serial.print(topic);
   Serial.print("]: ");
+  
   for (unsigned int i = 0; i < length; i++) {
     Serial.print((char)payload[i]);
   }
   Serial.println();
+
   if(strcmp(topic, topic_mqtt_OUT) == 0) {                              //переключаем управление на ВК
     mode_mqtt = 0;
+    vk_timer = 300;
     VKbot_begin();
+  }
+  if(strcmp(topic, topic_Clock_set) == 0){                             // Установка времени
+    String data = "";
+    data += (char)payload[0];
+    data += (char)payload[1];
+    hrs = data.toInt();
+    data="";
+    data += (char)payload[3];
+    data += (char)payload[4];
+    minut =data.toInt();
+    data ="";
+    data += (char)payload[6];
+    data += (char)payload[7];
+    sec = data.toInt();
+
+    flag_minuta = 1;    //сразу публикуем
   }
 //----------------------------------------------------
  /* String command = "";                                          // Создаем строку из payload
@@ -204,7 +231,7 @@ void callback(char* topic, byte* payload, unsigned int length) {   // Функц
 }
 
 void reconnect_MQTT() {                                           // Функция переподключения к MQTT брокеру
-
+  
   // Повторяем попытки до успешного подключения
   while (!client.connected()) {
     Serial.print("Попытка подключения к MQTT брокеру...");
@@ -213,18 +240,16 @@ void reconnect_MQTT() {                                           // Функц�
  
     client.connect(mqttClientId.c_str(), mqttUser, mqttPass);
 
-      // После подключения можно подписаться на топики (если нужно)
+      // ======================================После подключения можно подписаться на топики (если нужно)
       client.subscribe(topic_mqtt_OUT, Qos);
-  /*    client.subscribe(mqtt_topic_Relay1, Qos);
-      client.subscribe(mqtt_topic_Relay2, Qos);
-      client.subscribe(mqtt_topic_Relay3, Qos);
-      client.subscribe(mqtt_topic_Relay4, Qos);
+      client.subscribe(topic_Clock_set, Qos);
+  
 
-      client.subscribe(topic_All_control, Qos);
-*/
+
      if(client.connected()){
       Serial.println("подключено" );
-      mode_mqtt=1;                                          //режим mqtt
+      mode_mqtt = 1;                                       //режим mqtt
+      flag_minuta = 1;                                     //сразу отправляем publish()
      }
     else {
       Serial.print("ошибка, rc=");
@@ -235,8 +260,8 @@ void reconnect_MQTT() {                                           // Функц�
     }
     if(count_connect == 5){
         count_connect = 0;
-        mode_mqtt = 0;                                       //режим ВК
-        vk_timer = 300;
+        mode_mqtt = 0;                                        //режим ВК
+        vk_timer = 300;             
         Serial.println("попытки подключения исчерпаны");
         break;
     }
@@ -245,27 +270,76 @@ void reconnect_MQTT() {                                           // Функц�
 
 void timer1() {
   count_test++;
-  if(count_test>1000)count_test=0;
-  count--;
-  Serial.println(count);
+  if(count_test>100)count_test=0;
+
   if(!mode_mqtt) vk_timer--;  // если режим ВК то уменьшаем таймер
+  //---------------------
+  sec++;             //ход часов
+  if(sec == 60) {
+    flag_minuta = 1;
+    sec = 0;
+    minut++;
+    if(minut == 60){
+      minut = 0;
+      hrs++;
+      if(hrs == 24)hrs = 0;
+    }
+  }
+//------------------------------
 }
 
 void publish(){
-  //====================================публикуем счетчик
-    char msg[8];                              // Преобразуем значение счетчика в строку
-    snprintf(msg, sizeof(msg), "%d", count_test);
+    flag_minuta = 0;
+    char msg[10];                              // Преобразуем значение счетчика в строку
     
-    // Публикуем в MQTT топик
-    if (client.publish(mqtt_topic_counter, msg)) {
-      Serial.print("Опубликовано: ");
-      Serial.print(msg);
-      Serial.print(" в топик ");
-      Serial.println(mqtt_topic_counter);
-    } else {
-      Serial.println("Ошибка публикации");
+    if(mode_mqtt){           //------------------------------Если режим mqtt 
+      snprintf(msg, sizeof(msg), "%d", count_test);     //отправка тестового счетчика
+      if (client.publish(mqtt_topic_counter, msg)) {
+        Serial.print("Опубликовано: ");
+        Serial.print(msg);
+        Serial.print(" в топик ");
+        Serial.println(mqtt_topic_counter);
+      } else {
+        Serial.println("Ошибка публикации");
+      }
+      
+      if(minut>9){                                       //отправка времени
+        snprintf(msg, sizeof(msg), "%d:%d", hrs, minut);
+      }
+      else{
+        snprintf(msg, sizeof(msg), "%d:0%d", hrs, minut);
+      }
+
+      if (client.publish(topic_Clock, msg)) {            //публикуем время
+        Serial.print("Опубликовано: ");
+        Serial.print(msg);
+        Serial.print(" в топик ");
+        Serial.println(topic_Clock);
+      } else {
+        Serial.println("Ошибка публикации");
+      }
+      float temp_incar;                         //темпер в салоне
+      flag_getTemp = 0;                         
+      ds.readTemp();                           //read ds18
+        
+      temp_incar=ds.getTemp();
+      Serial.print("температура: ");
+      Serial.println(temp_incar);
+
+      snprintf(msg, sizeof(msg), "%.2f", temp_incar);       //подготавливаем строку обрезаем 2 знака после запятой
+      if (client.publish(topic_temper_incar, msg)) {            //публикуем
+        Serial.print("Опубликовано: ");
+        Serial.print(msg);
+        Serial.print(" в топик ");
+        Serial.println(topic_temper_incar);
+      } else {
+        Serial.println("Ошибка публикации");
+      }
     }
-    pubflag = 1;
+    else{                    //--------------------------   если режим ВК
+      snprintf(msg, sizeof(msg), "%d:%d", hrs, minut);
+      bot.sendMessage(String(msg),YOUR_USER_ID ); 
+    }
 }
 
 void pinsMode(){
@@ -288,6 +362,7 @@ void pinsMode(){
 
 void setup() {
   Serial.begin(74880);
+  Serial.println();
 
   pinsMode();
   WiFi_connect();
@@ -308,7 +383,8 @@ void setup() {
   else {
     Serial.println("Обновлений нет!");
   }
-
+  
+  ds.setResolution(10);
   timerCounter.attach(1.0, timer1);  // Запуск прерывания по таймеру 1 раз в секунду
 }
 
@@ -317,20 +393,22 @@ void loop() {
   if (mode_mqtt && !client.connected()) reconnect_MQTT();    //если режим mqtt и соединение разорвано
   if(!mode_mqtt && !VKbot_state) VKbot_begin();
 
- if(count <= 0){                             //отправка сообщения по счетчику
-    count = 60;
-    Serial.print("отправка - ");
-    Serial.println(mode_mqtt);
-    if(mode_mqtt) publish();
-    else{
-      bot.sendMessage(String(count_test),YOUR_USER_ID );   
-    } 
+  if(sec > 50 && !flag_getTemp){             //Запрос температуры
+    flag_getTemp = 1;
+    Serial.println("Запрос температуры");
+    if (!ds.requestTemp()) {
+      Serial.println("request error");
+    }
   }
 
+  if(flag_minuta) publish();                 //отправка сообщения
+
   if(mode_mqtt) client.loop();               //если режим mqtt
-  else{
-     bot.tick();                             //если режим ВК
+
+  else{                                      //если режим ВК
+     bot.tick();                             
      if(vk_timer <= 0) reconnect_MQTT();
   }
+  
   if(WiFi.status() != WL_CONNECTED) WiFi_connect();  //WIFI проверяем палюбому
 }
