@@ -37,11 +37,14 @@ const char* mqtt_topic_counter = "demo/counter";
 const char* topic_alertlamp = "demo/alertlamp";
 const char* topic_Clock = "demo/time";
 const char* topic_temper_incar = "demo/t_incar";
+const char* topic_handbrake = "demo/hbrake";
+const char* topic_kppsens = "demo/kpp";
+const char* topoc_dvs_state = "demo/dvs_state";
     //подписки
 const char* topic_mqtt_OUT = "demo/mqtt_out";
 const char* topic_Clock_set = "demo/time1";
-
-//-------------------------------------------------------------------------------------
+const char* topic_start = "demo/start";
+//------------------------------------------------------
 
 #define zik D1                                 // Пин зажигание
 #define starter D2                             // Стартер
@@ -52,18 +55,24 @@ const char* topic_Clock_set = "demo/time1";
 //#define ds18b20_sens D5                     // 
 #define tormoz D7                            // контроль Ручник
 #define flash D3                             //прерывание сигнал с катушки
-//----------------------------------------------------------------------------------------
+//------------------------------------------------------
 uint8_t count_connect;                       // счетчик кол-ва подключений к mqtt
 uint16_t command = 0;                        // Команда
-int peer_id;                                 //идентификатор чата
+int peer_id;                                 //идентификатор чата ВК
 Ticker timerCounter;                         // Таймер для прерываний
 //int8_t count = 10;
 int8_t flag_minuta = 1;
 uint16_t count_test = 0;                     //тестовый для публикаций
-int8_t flag_getTemp = 0;
+int8_t flag_getTemp = 0;                     //что бы не повторять запросы ds18 несколько раз
+
 
 int8_t mode_mqtt = 0;                        //если mqtt,то 1, если не соединился то режим ВК, 0
 int16_t vk_timer;                            //время через котор будет попытка подкл mqtt
+volatile unsigned long lastPulseTime = 0;    //для прерывания
+volatile unsigned long period = 0;           // период между импульсами в млс
+bool dvs_state = false;                     //Запущен ли двигатель
+volatile int16_t progrev_count;            //время прогрева
+bool progrev_state;
 
 //--------------------------------------------------clock
 uint8_t hrs=1;
@@ -75,7 +84,7 @@ WiFiClient espClient;                       //экземпляр WIFI клиен
 PubSubClient client(espClient);             // экземпляр mqtt клиента
 GyverDS18Single ds(14);                     // пин D5
 
-AutoOTA ota("2.2", "Srvrn1/auto_start");    //текущая версия==============================
+AutoOTA ota("2.3", "Srvrn1/auto_start");    //текущая версия==============================
 
 void WiFi_connect(){
   volatile int8_t n = 2;
@@ -183,6 +192,57 @@ void VKbot_begin(){
   }
 }
 
+void IRAM_ATTR onPulse() {                             //прерывание для определения оборотов двигателя
+  unsigned long now = millis();
+  period = now - lastPulseTime;
+  lastPulseTime = now;
+}
+
+void startengine(){                                       //прогрев двигателя
+  attachInterrupt(digitalPinToInterrupt(flash), onPulse, FALLING);                   //начинаем измерять обороты
+  if(period<200){                          //проверяем не запущен ли двигатель
+      dvs_state = 1;
+      client.publish(topoc_dvs_state, "2");     //2 - это статус работы двс
+    }
+
+  if(!progrev_state && !digitalRead(kpp_sens) && !digitalRead(tormoz) && !dvs_state){  //Включаем зажигание
+    client.publish(topoc_dvs_state, "1");                                              //1 это процесс запуска
+    Serial.println("включаем зажигание");
+    digitalWrite(zik, HIGH);                           //включаем зажигание
+    progrev_count = 4;                                 //засекаем 4 сек
+    progrev_state = 1;                                 //статус прогрева включаем
+  }
+  if(progrev_state && !dvs_state && progrev_count<=0){                                 //Включаем стартер
+    progrev_count =3;                                  //время работы стартера 3сек
+    Serial.println("включили стартер");
+    while (progrev_count && period>200){
+      digitalWrite(starter, HIGH);
+    }
+    digitalWrite(starter, LOW);                       //Выкл стартер
+  
+    if(period<200){                                  //если двигатель запустился
+      dvs_state = 1;
+      progrev_count = 1200;                           //Засекаем 20 мин 
+      client.publish(topoc_dvs_state, "2");            // 2 это двс работает
+      Serial.println("двс запущен");
+    }
+    else{                                           //если двигатель не запустился
+      dvs_state = 0;                                  //
+      progrev_state = 0;  
+      Serial.println("ошибка запуска ДВС");
+      client.publish(topoc_dvs_state, "0");
+      digitalWrite(zik, LOW);                         //Выключаем зажигание
+    }
+  }
+  if(dvs_state){
+    if(progrev_count <= 0){
+      digitalWrite(zik, LOW);                         //Выключаем зажигание
+      dvs_state = 0;                                  //
+      progrev_state = 0;                              //что бы не попадать в функцию startengine()
+    }
+  }
+}                                               
+
 void callback(char* topic, byte* payload, unsigned int length) {   // Функция щбработки сообщения MQTT
   Serial.print("Сообщение в топике [");
   Serial.print(topic);
@@ -193,7 +253,7 @@ void callback(char* topic, byte* payload, unsigned int length) {   // Функц
   }
   Serial.println();
 
-  if(strcmp(topic, topic_mqtt_OUT) == 0) {                              //переключаем управление на ВК
+  if(strcmp(topic, topic_mqtt_OUT) == 0) {                             //переключаем управление на ВК
     mode_mqtt = 0;
     vk_timer = 300;
     VKbot_begin();
@@ -214,20 +274,7 @@ void callback(char* topic, byte* payload, unsigned int length) {   // Функц
 
     flag_minuta = 1;    //сразу публикуем
   }
-//----------------------------------------------------
- /* String command = "";                                          // Создаем строку из payload
-    for (uint8 i = 0; i < length; i++) {
-      command += (char)payload[i];
-    }
-    command.trim();                                           // Удаляем пробелы из начала и конца строки
-
-    if(strcmp(topic, topic_All_control) == 0) zeroPublish();
-
-    else if (strcmp(topic, mqtt_topic_Relay1) == 0){  // Если топик совпадает с топиком реле
-      relayState2 = command.toInt();
-      controlRelay();
-    }*/
-  
+  if(strcmp(topic, topic_start) == 0) startengine();   // переход в функцию запуска двигателя
 }
 
 void reconnect_MQTT() {                                           // Функция переподключения к MQTT брокеру
@@ -243,7 +290,7 @@ void reconnect_MQTT() {                                           // Функц�
       // ======================================После подключения можно подписаться на топики (если нужно)
       client.subscribe(topic_mqtt_OUT, Qos);
       client.subscribe(topic_Clock_set, Qos);
-  
+      client.subscribe(topic_start, Qos);
 
 
      if(client.connected()){
@@ -271,6 +318,7 @@ void reconnect_MQTT() {                                           // Функц�
 void timer1() {
   count_test++;
   if(count_test>100)count_test=0;
+  if(progrev_state)progrev_count--;                    //если включен прогрев,счетаем таймер
 
   if(!mode_mqtt) vk_timer--;  // если режим ВК то уменьшаем таймер
   //---------------------
@@ -322,9 +370,7 @@ void publish(){
       flag_getTemp = 0;                         
       ds.readTemp();                           //read ds18
         
-      temp_incar=ds.getTemp();
-      Serial.print("температура: ");
-      Serial.println(temp_incar);
+      temp_incar=ds.getTemp();                
 
       snprintf(msg, sizeof(msg), "%.2f", temp_incar);       //подготавливаем строку обрезаем 2 знака после запятой
       if (client.publish(topic_temper_incar, msg)) {            //публикуем
@@ -386,6 +432,8 @@ void setup() {
   
   ds.setResolution(10);
   timerCounter.attach(1.0, timer1);  // Запуск прерывания по таймеру 1 раз в секунду
+  //attachInterrupt(digitalPinToInterrupt(flash), onPulse, FALLING);
+  //detachInterrupt(digitalPinToInterrupt(flash));
 }
 
 void loop() {
@@ -410,5 +458,7 @@ void loop() {
      if(vk_timer <= 0) reconnect_MQTT();
   }
   
+  if(progrev_state) startengine();
+
   if(WiFi.status() != WL_CONNECTED) WiFi_connect();  //WIFI проверяем палюбому
 }
